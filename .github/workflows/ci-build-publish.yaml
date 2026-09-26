@@ -28,13 +28,13 @@ jobs:
         include:
           - service: wallet-service
             context: ./services/wallet-service
-            dockerfile: ./services/wallet-service/Dockerfile
+            dockerfile: ./services/wallet/Dockerfile
           - service: ledger-service
             context: ./services/ledger-service
-            dockerfile: ./services/ledger-service/Dockerfile
+            dockerfile: ./services/ledger/Dockerfile
           - service: auth-service
             context: ./services/auth-service
-            dockerfile: ./services/auth-service/Dockerfile
+            dockerfile: ./services/auth/Dockerfile
 
     steps:
       - name: Checkout Code
