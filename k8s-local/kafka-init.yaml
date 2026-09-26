@@ -1,0 +1,89 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-init
+  namespace: default
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app: kafka-init
+    spec:
+      restartPolicy: OnFailure
+
+      containers:
+        - name: kafka-init
+          image: apache/kafka:4.1.2
+
+          env:
+            - name: BOOTSTRAP
+              value: "kafka:9092"
+
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+
+              echo "Waiting for Kafka..."
+
+              until /opt/kafka/bin/kafka-broker-api-versions.sh \
+                --bootstrap-server kafka:9092 > /dev/null 2>&1
+              do
+                echo "Kafka not ready yet..."
+                sleep 5
+              done
+
+              echo "Kafka is ready."
+
+              /opt/kafka/bin/kafka-topics.sh \
+                --bootstrap-server kafka:9092 \
+                --create \
+                --if-not-exists \
+                --topic transfers.completed \
+                --partitions 16 \
+                --replication-factor 1
+
+              /opt/kafka/bin/kafka-topics.sh \
+                --bootstrap-server kafka:9092 \
+                --create \
+                --if-not-exists \
+                --topic wallet.deposited \
+                --partitions 6 \
+                --replication-factor 1
+
+              /opt/kafka/bin/kafka-topics.sh \
+                --bootstrap-server kafka:9092 \
+                --create \
+                --if-not-exists \
+                --topic fraud.alerts \
+                --partitions 3 \
+                --replication-factor 1
+
+              /opt/kafka/bin/kafka-topics.sh \
+                --bootstrap-server kafka:9092 \
+                --create \
+                --if-not-exists \
+                --topic transfers.completed.dlq \
+                --partitions 1 \
+                --replication-factor 1
+
+              /opt/kafka/bin/kafka-topics.sh \
+                --bootstrap-server kafka:9092 \
+                --create \
+                --if-not-exists \
+                --topic wallet.deposited.dlq \
+                --partitions 1 \
+                --replication-factor 1
+
+              /opt/kafka/bin/kafka-topics.sh \
+                --bootstrap-server kafka:9092 \
+                --create \
+                --if-not-exists \
+                --topic fraud.alerts.dlq \
+                --partitions 1 \
+                --replication-factor 1
+
+              echo "All Kafka topics created."
+
