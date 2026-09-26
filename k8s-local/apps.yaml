@@ -58,10 +58,10 @@ spec:
           image: ghcr.io/vineet311/wallet/ledger:latest
           imagePullPolicy: Always
           ports:
-            - containerPort: 8081
+            - containerPort: 9090
           env:
             - name: PORT
-              value: "8081"
+              value: "9090"
 ---
 apiVersion: v1
 kind: Service
@@ -74,6 +74,6 @@ spec:
     app: ledger-service
   ports:
     - name: http
-      port: 8081
-      targetPort: 8081
+      port: 9090
+      targetPort: 9090
 
