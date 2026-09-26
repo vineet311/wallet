@@ -1,0 +1,21 @@
+{
+  "name": "notification",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pushes live wallet notifications to users over WebSocket",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@prometheus-io/client": "^0.16.1",
+    "ioredis": "^5.11.1",
+    "jsonwebtoken": "^9.0.3",
+    "kafkajs": "^2.2.4",
+    "pino": "^10.3.1",
+    "ws": "^8.21.3"
+  }
+}

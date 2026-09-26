@@ -1,0 +1,5 @@
+fastapi==0.141.1
+uvicorn==0.53.0
+aiokafka==0.14.0
+redis==8.1.0
+prometheus-client==0.26.0

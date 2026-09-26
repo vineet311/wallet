@@ -1,0 +1,55 @@
+# All values that change between environments come from environment variables.
+spring:
+  application:
+    name: ledger
+  kafka:
+    bootstrap-servers: ${KAFKA_BROKERS}
+    consumer:
+      group-id: ledger
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      # used only to publish failed messages to the .dlq topics
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+  lifecycle:
+    # on SIGTERM, give the consumer this long to finish its current message
+    timeout-per-shutdown-phase: 20s
+
+# The only HTTP server is the ops server: /healthz, /readyz, /metrics.
+server:
+  port: ${OPS_PORT:9090}
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      base-path: /
+      exposure:
+        include: health,prometheus
+      path-mapping:
+        prometheus: metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState
+          additional-path: "server:/healthz"
+        readiness:
+          include: readinessState,db
+          additional-path: "server:/readyz"
+  metrics:
+    tags:
+      service: ledger
+
+# JSON logs, one object per line, same idea as the Go services.
+logging:
+  structured:
+    format:
+      console: ecs
+    ecs:
+      service:
+        name: ledger
