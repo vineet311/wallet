@@ -1,0 +1,37 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+
+metadata:
+  name: wallet-ledger-local
+  namespace: argocd
+
+  annotations:
+    argocd-image-updater.argoproj.io/image-list: >-
+      wallet=ghcr.io/vineet311/wallet/wallet,
+      ledger=ghcr.io/vineet311/wallet/ledger
+
+    argocd-image-updater.argoproj.io/wallet.update-strategy: latest
+    argocd-image-updater.argoproj.io/ledger.update-strategy: latest
+
+    argocd-image-updater.argoproj.io/write-back-method: argocd
+
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/vineet311/wallet.git
+    targetRevision: main
+    path: k8s-local
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+
+    syncOptions:
+      - CreateNamespace=true
+

@@ -1,0 +1,27 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: wallet-ledger-ingress
+  namespace: default
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: wallet.local
+      http:
+        paths:
+          - path: /wallet(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: wallet-service
+                port:
+                  number: 8080
+          - path: /ledger(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: ledger-service
+                port:
+                  number: 8081
