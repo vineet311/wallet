@@ -1,4 +1,4 @@
-name: CI - Build & Publish Multi-Arch Images
+name: CI - Build & Publish Microservices
 
 on:
   push:
@@ -9,13 +9,14 @@ on:
   pull_request:
     branches:
       - main
-  workflow_dispatch: # Allows manual trigger from GitHub Actions tab
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
 
 jobs:
   build-and-push:
+    name: Build & Push (${{ matrix.service }})
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -26,21 +27,21 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - service: wallet-service
-            context: ./services/wallet-service
-            dockerfile: ./services/wallet/Dockerfile
-          - service: ledger-service
-            context: ./services/ledger-service
-            dockerfile: ./services/ledger/Dockerfile
           - service: auth-service
-            context: ./services/auth-service
-            dockerfile: ./services/auth/Dockerfile
+            context: ./auth-service
+            dockerfile: ./auth-service/Dockerfile
+          - service: wallet-service
+            context: ./wallet-service
+            dockerfile: ./wallet-service/Dockerfile
+          - service: ledger-service
+            context: ./ledger-service
+            dockerfile: ./ledger-service/Dockerfile
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # Lowercase owner/repo to prevent GHCR naming rejection
+      # 1. Lowercase repository owner to satisfy GHCR OCI spec
       - name: Set lowercased repository owner
         id: repo_meta
         run: |
@@ -48,17 +49,17 @@ jobs:
         env:
           OWNER: ${{ github.repository_owner }}
 
-      # Setup QEMU for multi-architecture emulation (amd64 / arm64)
+      # 2. Setup QEMU for multi-architecture emulation (amd64 / arm64)
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
         with:
           platforms: 'linux/amd64,linux/arm64'
 
-      # Setup Docker Buildx
+      # 3. Setup Docker Buildx
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Authenticate against GitHub Container Registry
+      # 4. Authenticate against GHCR
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -66,7 +67,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Extract metadata (tags, labels)
+      # 5. Generate tags and labels
       - name: Extract Docker Metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -80,9 +81,9 @@ jobs:
             type=sha,format=short,prefix=sha-
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
-      # Build and push the image to GHCR (enabled for both push and PR)
+      # 6. Build and push multi-architecture image to GHCR
       - name: Build and Push Multi-Arch Image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
