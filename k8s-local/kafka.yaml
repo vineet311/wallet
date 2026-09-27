@@ -2,7 +2,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: kafka
-  namespace: default
 spec:
   replicas: 1
   selector:
@@ -33,7 +32,7 @@ spec:
               value: "INTERNAL://kafka:9092"
 
             - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
-              value: "CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT"
+              value: "INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT"
 
             - name: KAFKA_INTER_BROKER_LISTENER_NAME
               value: "INTERNAL"
@@ -42,7 +41,7 @@ spec:
               value: "CONTROLLER"
 
             - name: KAFKA_CONTROLLER_QUORUM_VOTERS
-              value: "1@kafka:9093"
+              value: "1@localhost:9093"
 
             - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
               value: "1"
@@ -58,19 +57,15 @@ spec:
 
             - name: KAFKA_HEAP_OPTS
               value: "-Xmx512M -Xms256M"
-
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: kafka
-  namespace: default
 spec:
-  type: ClusterIP
   selector:
     app: kafka
   ports:
-    - name: internal
+    - name: kafka
       port: 9092
-      targetPort: 9092
-
+      targetPort: 9093
