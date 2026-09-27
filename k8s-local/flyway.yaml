@@ -1,0 +1,41 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: flyway-migrate
+  namespace: default
+spec:
+  backoffLimit: 5
+
+  template:
+    metadata:
+      labels:
+        app: flyway-migrate
+
+    spec:
+      restartPolicy: OnFailure
+
+      containers:
+        - name: flyway
+          image: flyway/flyway:13.7.0-alpine
+
+          command:
+            - flyway
+
+          args:
+            - "-url=jdbc:postgresql://postgres:5432/wallet"
+            - "-user=app"
+            - "-password=app"
+            - "-locations=filesystem:/flyway/migrations"
+            - "-connectRetries=10"
+            - "migrate"
+
+          volumeMounts:
+            - name: migrations
+              mountPath: /flyway/migrations
+              readOnly: true
+
+      volumes:
+        - name: migrations
+          configMap:
+            name: wallet-db-migrations
+

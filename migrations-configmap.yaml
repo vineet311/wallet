@@ -1,0 +1,98 @@
+apiVersion: v1
+data:
+  V1__auth.sql: |-
+    -- Owned by the gateway (auth) service.
+    CREATE SCHEMA IF NOT EXISTS auth;
+
+    CREATE TABLE auth.users (
+        id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        email         text NOT NULL UNIQUE,
+        password_hash text NOT NULL,
+        created_at    timestamptz NOT NULL DEFAULT now()
+    );
+  V2__wallet.sql: |-
+    -- Owned by the wallet service.
+    CREATE SCHEMA IF NOT EXISTS wallet;
+
+    CREATE TABLE wallet.wallets (
+        id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id       uuid NOT NULL UNIQUE,
+        balance_cents bigint NOT NULL DEFAULT 0 CHECK (balance_cents >= 0),
+        currency      char(3) NOT NULL DEFAULT 'USD',
+        -- Optimistic locking: every balance change bumps the version.
+        -- An UPDATE that expects an old version matches zero rows and the caller retries.
+        version       integer NOT NULL DEFAULT 0,
+        created_at    timestamptz NOT NULL DEFAULT now(),
+        updated_at    timestamptz NOT NULL DEFAULT now()
+    );
+
+    CREATE TABLE wallet.transactions (
+        id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id         uuid NOT NULL,                      -- who started it
+        kind            text NOT NULL CHECK (kind IN ('DEPOSIT', 'TRANSFER')),
+        from_wallet_id  uuid REFERENCES wallet.wallets(id), -- NULL for deposits
+        to_wallet_id    uuid NOT NULL REFERENCES wallet.wallets(id),
+        amount_cents    bigint NOT NULL CHECK (amount_cents > 0),
+        status          text NOT NULL DEFAULT 'COMPLETED',
+        idempotency_key text NOT NULL,
+        created_at      timestamptz NOT NULL DEFAULT now(),
+        -- The same user sending the same key twice gets the first result back.
+        UNIQUE (user_id, idempotency_key),
+        CHECK (from_wallet_id IS NULL OR from_wallet_id <> to_wallet_id)
+    );
+
+    CREATE INDEX transactions_from_wallet_idx ON wallet.transactions (from_wallet_id, created_at);
+    CREATE INDEX transactions_to_wallet_idx   ON wallet.transactions (to_wallet_id, created_at);
+
+    -- Transactional outbox. A row is written in the SAME database transaction
+    -- as the balance change, so "money moved" and "event recorded" can never disagree.
+    -- A relay loop in the wallet service publishes unsent rows to Kafka.
+    CREATE TABLE wallet.outbox (
+        id           bigserial PRIMARY KEY,
+        topic        text NOT NULL,
+        message_key  text NOT NULL,
+        payload      jsonb NOT NULL,
+        headers      jsonb NOT NULL DEFAULT '{}'::jsonb,   -- carries the trace context
+        created_at   timestamptz NOT NULL DEFAULT now(),
+        published_at timestamptz
+    );
+
+    CREATE INDEX outbox_unpublished_idx ON wallet.outbox (id) WHERE published_at IS NULL;
+  V3__ledger.sql: "-- Owned by the ledger service.\nCREATE SCHEMA IF NOT EXISTS ledger;\n\n--
+    One entry per business event. event_id is UNIQUE, which is what makes\n-- the
+    ledger idempotent: a duplicate Kafka delivery fails to insert and is skipped.\nCREATE
+    TABLE ledger.journal_entries (\n    id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n
+    \   event_id     text NOT NULL UNIQUE,\n    event_type   text NOT NULL,\n    reference_id
+    uuid NOT NULL,          -- the wallet transaction id\n    created_at   timestamptz
+    NOT NULL DEFAULT now()\n);\n\n-- Lines are immutable. Nothing ever UPDATEs or
+    DELETEs them.\nCREATE TABLE ledger.journal_lines (\n    id           bigserial
+    PRIMARY KEY,\n    entry_id     uuid NOT NULL REFERENCES ledger.journal_entries(id),\n
+    \   account      text NOT NULL,          -- e.g. wallet:<uuid> or external:cash\n
+    \   direction    text NOT NULL CHECK (direction IN ('DEBIT', 'CREDIT')),\n    amount_cents
+    bigint NOT NULL CHECK (amount_cents > 0)\n);\n\nCREATE INDEX journal_lines_account_idx
+    ON ledger.journal_lines (account);\nCREATE INDEX journal_lines_entry_idx   ON
+    ledger.journal_lines (entry_id);\n\n-- The double-entry rule, enforced by the
+    database itself:\n-- for every entry, total debits must equal total credits.\n--
+    The check is DEFERRED, so it runs at COMMIT, after all lines are inserted.\n--
+    An unbalanced entry makes the whole transaction fail.\nCREATE FUNCTION ledger.check_entry_balanced()
+    RETURNS trigger AS $$\nDECLARE\n    diff bigint;\nBEGIN\n    SELECT COALESCE(SUM(CASE
+    WHEN direction = 'DEBIT' THEN amount_cents ELSE -amount_cents END), 0)\n      INTO
+    diff\n      FROM ledger.journal_lines\n     WHERE entry_id = NEW.entry_id;\n    IF
+    diff <> 0 THEN\n        RAISE EXCEPTION 'journal entry % is unbalanced by % cents',
+    NEW.entry_id, diff;\n    END IF;\n    RETURN NULL;\nEND;\n$$ LANGUAGE plpgsql;\n\nCREATE
+    CONSTRAINT TRIGGER journal_entry_balanced\n    AFTER INSERT ON ledger.journal_lines\n
+    \   DEFERRABLE INITIALLY DEFERRED\n    FOR EACH ROW EXECUTE FUNCTION ledger.check_entry_balanced();\n\n--
+    Block edits and deletes on the journal. Corrections are new entries, never edits.\nCREATE
+    FUNCTION ledger.forbid_changes() RETURNS trigger AS $$\nBEGIN\n    RAISE EXCEPTION
+    'ledger journal is append-only';\nEND;\n$$ LANGUAGE plpgsql;\n\nCREATE TRIGGER
+    journal_lines_immutable\n    BEFORE UPDATE OR DELETE ON ledger.journal_lines\n
+    \   FOR EACH ROW EXECUTE FUNCTION ledger.forbid_changes();\n\nCREATE TRIGGER journal_entries_immutable\n
+    \   BEFORE UPDATE OR DELETE ON ledger.journal_entries\n    FOR EACH ROW EXECUTE
+    FUNCTION ledger.forbid_changes();\n\n-- Balance of every account, derived from
+    the journal.\n-- A wallet account's balance = credits - debits.\nCREATE VIEW ledger.account_balances
+    AS\nSELECT account,\n       SUM(CASE WHEN direction = 'CREDIT' THEN amount_cents
+    ELSE -amount_cents END) AS balance_cents\n  FROM ledger.journal_lines\n GROUP
+    BY account;\n "
+kind: ConfigMap
+metadata:
+  name: wallet-db-migrations
